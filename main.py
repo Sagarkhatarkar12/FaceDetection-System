@@ -6,21 +6,32 @@ import cv2
 import cvzone
 import numpy as np
 import face_recognition
+from datetime import datetime
+
 
 # # ---------- CONFIG ----------------------------------------------------------
 BACKGROUND_PATH = 'Resources/background_4.png'
 MODES_PATH      = 'Resources/Modes'
-STUDENTS_FILE   = 'students.json'      # local DB
+STUDENTS_FILE = os.path.join(os.path.dirname(__file__), 'students.json')
+      # local DB
 PROFILE_IMG_DIR = 'Images'             # local profile pictures
 ATTENDANCE_COOLDOWN = 30               # seconds before re‑counting same face
 # # ---------------------------------------------------------------------------
 
 def load_students():
-#     """Load local student database"""
+    """Load local student database"""
     if not os.path.exists(STUDENTS_FILE):
+        print(f"❌ File not found: {STUDENTS_FILE}")
         return {}
-    with open(STUDENTS_FILE, 'r', encoding='utf-8') as f:
-        return json.load(f)
+    try:
+        with open(STUDENTS_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            print("✅ Loaded student data:", data)
+            return data
+    except Exception as e:
+        print(f"❌ Error loading students.json: {e}")
+        return {}
+
 
 def save_students(data):
     with open(STUDENTS_FILE, 'w', encoding='utf-8') as f:
@@ -28,8 +39,8 @@ def save_students(data):
 
 # # 1️⃣  Load encodings
 # print("Loading encodings …")
-# with open('EncodeFile.p', 'rb') as f:
-#     encodeListKnown, studentIds = pickle.load(f)
+with open('EncodeFile.p', 'rb') as f:
+    encodeListKnown, studentIds = pickle.load(f)
 # print("✔ Encodings ready")
 
 # # 2️⃣  Load resources
@@ -41,34 +52,143 @@ mode_images = [cv2.imread(os.path.join(MODES_PATH, p))
 # # 3️⃣  Database in memory
 students = load_students()
 
-# # 4️⃣  Webcam
+# # 4️⃣  Webcam started
 cap = cv2.VideoCapture(0)
 cap.set(3, 640)
 cap.set(4, 480)
-
+print("Starting web came")
 modeType, counter, current_id = 0, 0, None
-imgStudent = None
-
+# here we will give the window size 
 while True:
     ret, frame = cap.read()
-    if not ret:
-        print("⚠️  Camera frame not received"); break
+    if not ret :
+        print("Camera does not working")
 
-#     # Small RGB copy for recognition
     small = cv2.resize(frame, (0,0), fx=0.25, fy=0.25)[:, :, ::-1]
-
+    # print("small",small)
+#face detection ho rha hai 
     face_locations = face_recognition.face_locations(small)
+    # print("face_Location", face_locations)
     face_encodings = face_recognition.face_encodings(small, face_locations)
 
-#     # Draw live frame + mode panel onto background
+    # Draw live frame + mode panel onto background
+    
     view = imgBackground.copy()
     view[162:162+480, 55:55+640] = frame
     view[44:44+633, 808:808+414] = mode_images[modeType]
-
     for enc, loc in zip(face_encodings, face_locations):
         matches  = face_recognition.compare_faces(encodeListKnown, enc)
+        print("Match",matches)
         dists    = face_recognition.face_distance(encodeListKnown, enc)
+        # print("Dists",dists)
         idx      = np.argmin(dists)
+        print("idx",idx)
+        
+
+        if matches[idx]:
+            y1,x2,y2,x1 = [v*4 for v in loc]     # rescale to full frame
+            bbox = 55+x1, 162+y1, x2-x1, y2-y1
+            cvzone.cornerRect(view, bbox, rt=0)
+
+            current_id = studentIds[idx]
+            print("current id",current_id)
+            if counter == 0:
+                counter  = 1
+                modeType = 1       # “Loading…” screen
+ 
+    if counter:
+        if counter == 1 and current_id:
+            # print("Students", students)
+            info = students.get(current_id)
+            print("info",info)
+            if not info:          # unknown id in DB
+                print(f"ID {current_id} not in students.json"); counter=0; modeType=0; continue
+
+            # Load profile pic once
+            img_path = os.path.join(PROFILE_IMG_DIR, f"{current_id}.png")
+            imgStudent = cv2.imread(img_path) if os.path.exists(img_path) else None
+
+            # Attendance logic
+            last_seen = datetime.strptime(info['last_attendance_time'],
+                                          "%Y-%m-%d %H:%M:%S")
+            print("dateTime = ", datetime.now())
+            elapsed = (datetime.now() - last_seen).total_seconds()
+            if elapsed > ATTENDANCE_COOLDOWN:
+                info['total_attendance'] += 1
+                info['last_attendance_time'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                save_students(students)        # persist change
+                print(f"✔ Attendance +1 for {current_id} ({info['name']})")
+            else:
+                modeType = 3      # “Already counted”
+                counter  = 0
+
+        # if modeType != 3:         # not blocked by cooldown
+        #     if 10 < counter < 20: modeType = 2
+
+        #     if counter <= 10 and imgStudent is not None:
+        #         # Overlay statistics and photo
+        #         cv2.putText(view, str(info['total_attendance']), (861,125),
+        #                     cv2.FONT_HERSHEY_COMPLEX, 1, (255,255,255), 1)
+        #         cv2.putText(view, info['major'],      (1006,550),
+        #                     cv2.FONT_HERSHEY_COMPLEX, 0.5, (255,255,255),1)
+        #         cv2.putText(view, str(current_id),    (1006,493),
+        #                     cv2.FONT_HERSHEY_COMPLEX, 0.5, (255,255,255),1)
+        #         cv2.putText(view, info['standing'],   (910,625),
+        #                     cv2.FONT_HERSHEY_COMPLEX, 0.6, (100,100,100),1)
+        #         cv2.putText(view, info['year'],       (1025,625),
+        #                     cv2.FONT_HERSHEY_COMPLEX, 0.6, (100,100,100),1)
+        #         cv2.putText(view, info['starting_year'], (1125,625),
+        #                     cv2.FONT_HERSHEY_COMPLEX, 0.6, (100,100,100),1)
+
+        #         (w,_),_ = cv2.getTextSize(info['name'], cv2.FONT_HERSHEY_COMPLEX,1,1)
+        #         cv2.putText(view, info['name'], (808+(414-w)//2, 445),
+        #                     cv2.FONT_HERSHEY_COMPLEX,1,(50,50,50),1)
+
+        #         view[175:175+216, 909:909+216] = cv2.resize(imgStudent,(216,216))
+
+        #     counter += 1
+        #     if counter >= 20:
+        #         counter, modeType, current_id = 0, 0, None
+        #         imgStudent = None
+    # -----------------------------------------------------------------------
+
+#     cv2.imshow("Face Attendance (Offline)", view)
+#     if cv2.waitKey(1) & 0xFF == 27:   # ESC to quit
+#         break
+
+# cap.release()
+# cv2.destroyAllWindows()
+ 
+
+#     cv2.imshow("Live Camera", frame)        # draw the frame
+#     if cv2.waitKey(1) & 0xFF == 27:         # ESC exits
+#         break
+
+# cap.release()
+# cv2.destroyAllWindows()
+
+# imgStudent = None
+
+# while True:
+    # ret, frame = cap.read()
+    # if not ret:
+    #     print("⚠️  Camera frame not received"); break
+
+#     # Small RGB copy for recognition
+    # small = cv2.resize(frame, (0,0), fx=0.25, fy=0.25)[:, :, ::-1]
+
+    # face_locations = face_recognition.face_locations(small)
+    # face_encodings = face_recognition.face_encodings(small, face_locations)
+
+#     # Draw live frame + mode panel onto background
+    # view = imgBackground.copy()
+    # view[162:162+480, 55:55+640] = frame
+    # view[44:44+633, 808:808+414] = mode_images[modeType]
+
+    # for enc, loc in zip(face_encodings, face_locations):
+    #     matches  = face_recognition.compare_faces(encodeListKnown, enc)
+    #     dists    = face_recognition.face_distance(encodeListKnown, enc)
+    #     idx      = np.argmin(dists)
 
 #         if matches[idx]:
 #             y1,x2,y2,x1 = [v*4 for v in loc]     # rescale to full frame
@@ -134,9 +254,9 @@ while True:
 #                 imgStudent = None
 #     # -----------------------------------------------------------------------
 
-#     cv2.imshow("Face Attendance (Offline)", view)
-#     if cv2.waitKey(1) & 0xFF == 27:   # ESC to quit
-#         break
+    cv2.imshow("Face Attendance (Offline)", view)
+    if cv2.waitKey(1) & 0xFF == 27:   # ESC to quit
+        break
 
-# cap.release()
-# cv2.destroyAllWindows()
+cap.release()
+cv2.destroyAllWindows()

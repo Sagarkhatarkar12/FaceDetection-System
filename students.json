@@ -1,5 +1,5 @@
 {
-  "123": {
+  "101": {
     "name": "Alice Sharma",
     "major": "CSE",
     "standing": "Good",
@@ -8,13 +8,13 @@
     "total_attendance": 5,
     "last_attendance_time": "2025-06-15 14:32:10"
   },
-  "456": {
-    "name": "Rahul Desai",
-    "major": "ECE",
+  "102": {
+    "name": "Sagar khatarkar",
+    "major": "CSE",
     "standing": "Excellent",
-    "year": "2nd",
-    "starting_year": "2023",
-    "total_attendance": 2,
-    "last_attendance_time": "2025-06-10 09:10:43"
+    "year": "6th",
+    "starting_year": "2025",
+    "total_attendance": 1,
+    "last_attendance_time": "2025-06-18 13:10:36"
   }
 }
